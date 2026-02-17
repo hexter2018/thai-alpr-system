@@ -3,9 +3,9 @@ Configuration Management
 Load settings from environment variables
 """
 import os
-from typing import Optional, List
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from typing import Optional, List, Annotated
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -24,12 +24,13 @@ class Settings(BaseSettings):
     RELOAD: bool = Field(default=False, env="RELOAD")
     
     # CORS
-    CORS_ORIGINS: List[str] = Field(
+    CORS_ORIGINS: Annotated[List[str], NoDecode] = Field(
         default=["http://localhost:3000", "http://localhost:5173"],
         env="CORS_ORIGINS"
     )
     
-    @validator("CORS_ORIGINS", pre=True)
+    @field_validator("CORS_ORIGINS", pre=True)
+    @classmethod
     def parse_cors_origins(cls, v):
         if isinstance(v, str):
             if not v or v.strip() == "":
@@ -99,10 +100,11 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = Field(default=True, env="RATE_LIMIT_ENABLED")
     RATE_LIMIT_PER_MINUTE: int = Field(default=60, env="RATE_LIMIT_PER_MINUTE")
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
 
 
 # Global settings instance
