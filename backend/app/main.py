@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from .config import get_settings
 from .database import init_database, get_db_manager, get_async_db
@@ -93,7 +94,33 @@ async def lifespan(app: FastAPI):
             on_detection=handle_detection
         )
         
-        # 5. Initialize Active Learning
+        # 5. Register and start active cameras from DB
+        logger.info("📷 Loading active camera configurations...")
+        from .models import CameraConfig
+        async with db_manager.session_scope() as session:
+            result = await session.execute(
+                select(CameraConfig).where(CameraConfig.is_active.is_(True))
+            )
+            active_cameras = result.scalars().all()
+
+        for camera in active_cameras:
+            added = await stream_manager.add_camera(
+                camera_id=camera.camera_id,
+                rtsp_url=camera.rtsp_url,
+                frame_skip=camera.frame_skip,
+                polygon_zone=camera.polygon_zone,
+            )
+            if not added:
+                logger.warning(f"Skipping startup for camera {camera.camera_id}; add_camera returned False")
+                continue
+
+            started = await stream_manager.start_camera(camera.camera_id)
+            if not started:
+                logger.error(f"Failed to auto-start camera {camera.camera_id}")
+
+        logger.info(f"📹 Auto-started {len(stream_manager.get_active_cameras())}/{len(active_cameras)} active cameras")
+
+        # 6. Initialize Active Learning
         logger.info("🎓 Initializing active learning...")
         init_active_learning(
             dataset_path=settings.DATASET_PATH,
