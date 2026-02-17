@@ -62,12 +62,10 @@ class VehicleDetector:
         """Load YOLOv8 model (PyTorch/ONNX or TensorRT)."""
         try:
             from ultralytics import YOLO
-            
-            model_path_str = self.model_path
-            
+                        
             # Check if TensorRT engine exists
             if self.use_tensorrt:
-                engine_path = model_path.with_suffix('.engine')
+                engine_path = self.model_path.with_suffix('.engine')
                 
                 if engine_path.exists():
                     logger.info(f"Loading TensorRT engine: {engine_path}")
@@ -82,8 +80,8 @@ class VehicleDetector:
                     model = self._try_export_and_reload_tensorrt(model, engine_path, fallback_path)
             else:
                 fallback_path = self._resolve_fallback_model_path()
-                logger.info(f"Loading PyTorch model: {self.model_path}")
-                model = YOLO(str(self.model_path))
+                logger.info(f"Loading source model: {fallback_path}")
+                model = YOLO(str(fallback_path))
             
             model.to(self.device)
             

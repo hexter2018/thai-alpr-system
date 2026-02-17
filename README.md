@@ -67,7 +67,7 @@ Post-Processing → Database Storage → WebSocket Broadcast
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-org/thai-alpr-system.git
+git clone https://github.com/hexter2018/thai-alpr-system.git
 cd thai-alpr-system
 ```
 
