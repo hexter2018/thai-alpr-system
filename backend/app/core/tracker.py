@@ -51,15 +51,34 @@ class VehicleTracker:
         try:
             # Option 1: Use supervision library (recommended)
             from supervision import ByteTrack
-            
-            self.tracker = ByteTrack(
-                track_activation_threshold=self.track_thresh,
-                lost_track_buffer=self.track_buffer,
-                minimum_matching_threshold=self.match_thresh,
-                minimum_consecutive_frames=1
+        
+            import inspect
+
+            # Support multiple supervision versions with different ByteTrack args.
+            signature = inspect.signature(ByteTrack.__init__)
+            params = signature.parameters
+
+            arg_aliases = {
+                "track_activation_threshold": self.track_thresh,
+                "track_thresh": self.track_thresh,
+                "lost_track_buffer": self.track_buffer,
+                "track_buffer": self.track_buffer,
+                "minimum_matching_threshold": self.match_thresh,
+                "match_thresh": self.match_thresh,
+                "minimum_consecutive_frames": 1,
+            }
+            kwargs = {
+                name: value
+                for name, value in arg_aliases.items()
+                if name in params
+            }
+            logger.info(
+                "ByteTrack initialized successfully with args: %s",
+                sorted(kwargs.keys())
             )
+            self.tracker = ByteTrack(**kwargs)
             self.use_fallback = False
-            logger.info("ByteTrack initialized successfully")
+            
             
         except ImportError:
             try:
