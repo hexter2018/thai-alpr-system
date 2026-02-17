@@ -56,10 +56,12 @@ class ThaiOCREngine:
         """Initialize PaddleOCR with Thai language support"""
         try:
             from paddleocr import PaddleOCR
+
+            paddle_lang = self._resolve_paddle_lang(self.lang)
             
             self.ocr = PaddleOCR(
                 use_angle_cls=True,      # Enable text angle classification
-                lang=self.lang,          # Thai language
+                lang=paddle_lang,        # Thai language
                 use_gpu=self.use_gpu,    # GPU acceleration
                 show_log=False,          # Suppress logs
                 
@@ -85,6 +87,22 @@ class ThaiOCREngine:
         except Exception as e:
             logger.error(f"Failed to initialize PaddleOCR: {e}")
             raise
+    
+    @staticmethod
+    def _resolve_paddle_lang(lang: str) -> str:
+        """Map requested language to a PaddleOCR supported language code."""
+        lang_code = (lang or "").lower().strip()
+
+        # PaddleOCR does not expose `th` directly; `latin` is the closest
+        # multilingual recognizer and avoids startup crashes.
+        if lang_code in {"th", "thai"}:
+            logger.warning(
+                "PaddleOCR does not support '%s' directly. Falling back to 'en'.",
+                lang,
+            )
+            return "en"
+
+        return lang_code or "en"
     
     def _init_tesseract(self):
         """Initialize Tesseract OCR (fallback option)"""
