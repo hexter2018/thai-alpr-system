@@ -10,6 +10,11 @@ import {
 } from '@heroicons/react/24/outline';
 import StatsChart from './StatsChart';
 
+const toSafeNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+
 const KPICard = ({ title, value, subtitle, icon: Icon, color, trend }) => {
   const colorClasses = {
     blue: 'bg-blue-500',
@@ -52,18 +57,18 @@ const Dashboard = () => {
     refetchInterval: 10000, // Refresh every 10 seconds
   });
 
-  const kpis = stats?.data || {
-    total_detections: 0,
-    alpr_auto_count: 0,
-    mlpr_count: 0,
-    pending_count: 0,
-    rejected_count: 0,
-    accuracy_percentage: 0,
-    avg_confidence: 0,
-    unique_vehicles: 0,
-    avg_processing_time_ms: 0,
+  const rawKpis = stats?.data || {};
+  const kpis = {
+    total_detections: toSafeNumber(rawKpis.total_detections),
+    alpr_auto_count: toSafeNumber(rawKpis.alpr_auto_count),
+    mlpr_count: toSafeNumber(rawKpis.mlpr_count),
+    pending_count: toSafeNumber(rawKpis.pending_count),
+    rejected_count: toSafeNumber(rawKpis.rejected_count),
+    accuracy_percentage: toSafeNumber(rawKpis.accuracy_percentage),
+    avg_confidence: toSafeNumber(rawKpis.avg_confidence),
+    unique_vehicles: toSafeNumber(rawKpis.unique_vehicles),
+    avg_processing_time_ms: toSafeNumber(rawKpis.avg_processing_time_ms),
   };
-
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -219,14 +224,16 @@ const Dashboard = () => {
 };
 
 const StatusBar = ({ label, count, total, color }) => {
-  const percentage = total > 0 ? (count / total) * 100 : 0;
+  const safeCount = toSafeNumber(count);
+  const safeTotal = toSafeNumber(total);
+  const percentage = safeTotal > 0 ? (safeCount / safeTotal) * 100 : 0;
 
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
         <span className="text-sm font-medium text-gray-700">{label}</span>
         <span className="text-sm text-gray-600">
-          {count.toLocaleString()} ({percentage.toFixed(1)}%)
+          {safeCount.toLocaleString()} ({percentage.toFixed(1)}%)
         </span>
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2">
