@@ -33,9 +33,9 @@ ultralytics==8.0.227
 # Note: TensorRT must be installed manually from NVIDIA
 
 # OpenCV with CUDA support (optional, for max performance)
-opencv-python==4.8.1.78
+opencv-python==4.6.0.66
 # For CUDA build: opencv-contrib-python
-opencv-contrib-python==4.8.1.78
+opencv-contrib-python==4.6.0.66
 
 # ========== OCR ==========
 # PaddleOCR (Thai language support)
