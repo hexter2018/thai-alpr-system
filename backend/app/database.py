@@ -108,6 +108,19 @@ class DatabaseManager:
             logger.error(f"Database connection failed: {e}")
             return False
     
+    
+    def initialize_schema(self):
+        """Create database tables if they don't exist"""
+        from .models import Base
+
+        try:
+            with self.engine.begin() as conn:
+                Base.metadata.create_all(bind=conn)
+            logger.info("Database schema initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize database schema: {e}")
+            raise
+        
     async def test_async_connection(self) -> bool:
         """Test async database connection"""
         try:

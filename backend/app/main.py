@@ -57,6 +57,8 @@ async def lifespan(app: FastAPI):
         if not db_manager.test_connection():
             raise RuntimeError("Database connection failed")
         
+        db_manager.initialize_schema()
+        
         # 2. Initialize Redis
         logger.info("🔴 Initializing Redis...")
         redis_service = await init_redis(
