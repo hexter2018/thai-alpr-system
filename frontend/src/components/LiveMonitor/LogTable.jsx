@@ -1,30 +1,91 @@
 import React from 'react';
 
-export default function LogTable({ logs = [] }) {
+export default function LogTable({ logs = [], onClear }) {
+  const rows = [...logs].slice(-50).reverse();
+
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Plate</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Province</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {logs.slice(-10).reverse().map((log, idx) => (
-            <tr key={idx} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(log.timestamp).toLocaleTimeString()}</td>
-              <td className="px-6 py-4 whitespace-nowrap font-medium">{log.detected_plate}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm">{log.detected_province}</td>
-              <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 py-1 rounded text-xs ${log.confidence > 0.95 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{(log.confidence * 100).toFixed(0)}%</span></td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm">{log.status}</td>
+      {/* Header */}
+      <div className="flex justify-between items-center px-5 py-3 border-b bg-gray-50">
+        <h3 className="font-semibold text-gray-700 text-sm">Detection Log</h3>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400">{logs.length} entries</span>
+          {onClear && (
+            <button
+              onClick={onClear}
+              className="text-xs px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto max-h-60 overflow-y-auto">
+        <table className="min-w-full text-sm divide-y divide-gray-100">
+          <thead className="bg-gray-50 sticky top-0 z-10">
+            <tr>
+              {['Time', 'Camera', 'Plate', 'Province', 'Confidence', 'Status'].map((h) => (
+                <th
+                  key={h}
+                  className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide"
+                >
+                  {h}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-50">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">
+                  No detections yet
+                </td>
+              </tr>
+            ) : (
+              rows.map((log, idx) => {
+                // backend sends ocr_confidence; hook normalises both fields
+                const conf   = log.confidence ?? log.ocr_confidence ?? 0;
+                const isHigh = conf >= 0.95;
+
+                return (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">
+                      {log.timestamp
+                        ? new Date(log.timestamp).toLocaleTimeString('th-TH')
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">
+                      {log.camera_id || '—'}
+                    </td>
+                    <td className="px-4 py-2 font-bold text-gray-900 whitespace-nowrap">
+                      {log.detected_plate || '—'}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-600">
+                      {log.detected_province || '—'}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          isHigh
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-yellow-100 text-yellow-700'
+                        }`}
+                      >
+                        {(conf * 100).toFixed(0)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500">
+                      {log.status || '—'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
