@@ -2,7 +2,7 @@
 Database Configuration and Session Management
 """
 import logging
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from typing import Generator, AsyncGenerator
@@ -101,7 +101,7 @@ class DatabaseManager:
         """Test database connection"""
         try:
             with self.engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             logger.info("Database connection successful")
             return True
         except Exception as e:
@@ -112,7 +112,7 @@ class DatabaseManager:
         """Test async database connection"""
         try:
             async with self.async_engine.connect() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             logger.info("Async database connection successful")
             return True
         except Exception as e:
