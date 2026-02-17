@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from .config import get_settings
+from .config import get_settings, get_env_camera_configs
 from .database import init_database, get_db_manager, get_async_db
 from .services.redis_service import init_redis, close_redis, get_redis
 from .services.rtsp_service import init_stream_manager, get_stream_manager
@@ -120,7 +120,33 @@ async def lifespan(app: FastAPI):
 
         logger.info(f"📹 Auto-started {len(stream_manager.get_active_cameras())}/{len(active_cameras)} active cameras")
 
-        # 6. Initialize Active Learning
+                # 6. Register and start cameras from .env (fallback/legacy mode)
+        env_cameras = get_env_camera_configs()
+        env_started = 0
+        for camera in env_cameras:
+            if camera["camera_id"] in stream_manager.processors:
+                continue
+
+            added = await stream_manager.add_camera(
+                camera_id=camera["camera_id"],
+                rtsp_url=camera["rtsp_url"],
+                frame_skip=camera["frame_skip"],
+                polygon_zone=camera["polygon_zone"],
+            )
+            if not added:
+                logger.warning(f"Skipping startup for .env camera {camera['camera_id']}; add_camera returned False")
+                continue
+
+            started = await stream_manager.start_camera(camera["camera_id"])
+            if started:
+                env_started += 1
+            else:
+                logger.error(f"Failed to auto-start .env camera {camera['camera_id']}")
+
+        if env_cameras:
+            logger.info(f"📹 Auto-started {env_started}/{len(env_cameras)} cameras from .env")
+
+        # 7. Initialize Active Learning
         logger.info("🎓 Initializing active learning...")
         init_active_learning(
             dataset_path=settings.DATASET_PATH,

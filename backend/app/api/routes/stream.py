@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...database import get_async_db
 from ...models import CameraConfig
 from ...services.rtsp_service import get_stream_manager
+from ...config import get_env_camera_configs
 
 router = APIRouter()
 
@@ -28,6 +29,17 @@ async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db))
                 frame_skip=camera_config.frame_skip,
                 polygon_zone=camera_config.polygon_zone
             )
+
+        else:
+            env_cameras = get_env_camera_configs()
+            env_camera = next((c for c in env_cameras if c["camera_id"] == camera_id), None)
+            if env_camera:
+                await manager.add_camera(
+                    camera_id=env_camera["camera_id"],
+                    rtsp_url=env_camera["rtsp_url"],
+                    frame_skip=env_camera["frame_skip"],
+                    polygon_zone=env_camera["polygon_zone"],
+                )
 
     if manager.is_camera_running(camera_id):
         return {"message": "Camera already running", "camera_id": camera_id}

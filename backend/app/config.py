@@ -3,6 +3,8 @@ Configuration Management
 Load settings from environment variables
 """
 import os
+import re
+from pathlib import Path
 from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
@@ -122,4 +124,63 @@ def reload_settings():
     """Reload settings from environment"""
     global _settings
     _settings = Settings()
+
     return _settings
+
+def get_env_camera_configs(env_file: str = ".env") -> List[dict]:
+    """
+    Load camera configs from environment variables and/or .env file.
+
+    Supported naming format:
+    - CAMERA_ID_1, RTSP_URL_1
+    - CAMERA_ID_2, RTSP_URL_2
+    - ...
+    """
+    cameras: List[dict] = []
+    env_values: dict = {}
+
+    env_path = Path(env_file)
+    if env_path.exists():
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            env_values[key.strip()] = value.strip()
+
+    # Runtime environment variables should override .env values
+    env_values.update(os.environ)
+
+    camera_slots = []
+    for key, value in env_values.items():
+        if not isinstance(value, str):
+            continue
+        match = re.fullmatch(r"CAMERA_ID_(\d+)", key)
+        if not match:
+            continue
+        camera_index = int(match.group(1))
+        camera_id = value.strip()
+        if not camera_id:
+            continue
+        camera_slots.append((camera_index, camera_id))
+
+    try:
+        frame_skip_default = int(str(env_values.get("FRAME_SKIP", "2")))
+    except ValueError:
+        frame_skip_default = 2
+
+    for camera_index, camera_id in sorted(camera_slots, key=lambda x: x[0]):
+        rtsp_url = str(env_values.get(f"RTSP_URL_{camera_index}", "")).strip()
+        if not rtsp_url:
+            continue
+
+        cameras.append(
+            {
+                "camera_id": camera_id,
+                "rtsp_url": rtsp_url,
+                "frame_skip": frame_skip_default,
+                "polygon_zone": None,
+            }
+        )
+
+    return cameras
