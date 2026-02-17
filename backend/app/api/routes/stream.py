@@ -1,4 +1,4 @@
-"""RTSP Stream Control API"""
+"""RTSP Stream Control API — with zone management"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,16 +21,22 @@ class CameraAdd(BaseModel):
     polygon_zone: Optional[List] = None
 
 
+class ZoneUpdate(BaseModel):
+    """Polygon zone update payload. Pass null / empty list to clear the zone."""
+    polygon_zone: Optional[List] = None
+
+
 @router.get("/list")
 async def list_cameras(db: AsyncSession = Depends(get_async_db)):
     """
     List ALL cameras: currently running + registered in DB + configured in .env.
-    Returns a dict keyed by camera_id so the frontend can do Object.entries().
+    Returns a dict keyed by camera_id.
     """
     manager = get_stream_manager()
 
-    # 1. Running cameras (live stats)
     cameras: dict = {}
+
+    # 1. Running cameras (live stats)
     for cam_id, stats in manager.get_all_stats().items():
         cameras[cam_id] = {
             **stats,
@@ -38,29 +44,35 @@ async def list_cameras(db: AsyncSession = Depends(get_async_db)):
             "source": "running",
         }
 
-    # 2. DB cameras (may or may not be running)
+    # 2. DB cameras
     result = await db.execute(select(CameraConfig))
     for cam in result.scalars().all():
         if cam.camera_id not in cameras:
             cameras[cam.camera_id] = {
-                "camera_id": cam.camera_id,
+                "camera_id":   cam.camera_id,
                 "camera_name": cam.camera_name,
-                "rtsp_url": cam.rtsp_url,
-                "is_active": cam.is_active,
-                "is_running": False,
-                "source": "database",
+                "rtsp_url":    cam.rtsp_url,
+                "is_active":   cam.is_active,
+                "is_running":  False,
+                "source":      "database",
+                "polygon_zone": cam.polygon_zone,
             }
+        else:
+            # Enrich running entry with DB meta
+            cameras[cam.camera_id].setdefault("camera_name", cam.camera_name)
+            cameras[cam.camera_id].setdefault("polygon_zone", cam.polygon_zone)
 
     # 3. .env cameras
     for env_cam in get_env_camera_configs():
         cid = env_cam["camera_id"]
         if cid not in cameras:
             cameras[cid] = {
-                "camera_id": cid,
+                "camera_id":   cid,
                 "camera_name": cid,
-                "rtsp_url": env_cam["rtsp_url"],
-                "is_running": False,
-                "source": "env",
+                "rtsp_url":    env_cam["rtsp_url"],
+                "is_running":  False,
+                "source":      "env",
+                "polygon_zone": env_cam.get("polygon_zone"),
             }
 
     active_count = len(manager.get_active_cameras())
@@ -69,16 +81,15 @@ async def list_cameras(db: AsyncSession = Depends(get_async_db)):
 
 @router.post("/start/{camera_id}")
 async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db)):
-    """Start a camera stream. Auto-registers from DB or .env if not yet loaded."""
+    """Start a camera stream. Auto-registers from DB or .env if needed."""
     manager = get_stream_manager()
 
-    # Register if not already known to the manager
     if camera_id not in manager.processors:
         # Try DB first
         result = await db.execute(
             select(CameraConfig).where(
                 CameraConfig.camera_id == camera_id,
-                CameraConfig.is_active.is_(True)
+                CameraConfig.is_active.is_(True),
             )
         )
         cam = result.scalar_one_or_none()
@@ -91,7 +102,6 @@ async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db))
                 polygon_zone=cam.polygon_zone,
             )
         else:
-            # Try .env
             env_cam = next(
                 (c for c in get_env_camera_configs() if c["camera_id"] == camera_id),
                 None,
@@ -106,7 +116,7 @@ async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db))
             else:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Camera '{camera_id}' not found in DB or .env"
+                    detail=f"Camera '{camera_id}' not found in DB or .env",
                 )
 
         if not added:
@@ -143,7 +153,6 @@ async def camera_status(camera_id: str):
 @router.post("/add")
 async def add_camera(body: CameraAdd, db: AsyncSession = Depends(get_async_db)):
     """Persist a new camera to DB and start streaming immediately."""
-    # Save to DB
     db_cam = CameraConfig(
         camera_id=body.camera_id,
         camera_name=body.camera_name,
@@ -155,7 +164,6 @@ async def add_camera(body: CameraAdd, db: AsyncSession = Depends(get_async_db)):
     db.add(db_cam)
     await db.commit()
 
-    # Start streaming
     manager = get_stream_manager()
     await manager.add_camera(
         camera_id=body.camera_id,
@@ -174,7 +182,6 @@ async def remove_camera(camera_id: str, db: AsyncSession = Depends(get_async_db)
     manager = get_stream_manager()
     await manager.remove_camera(camera_id)
 
-    # Mark inactive in DB
     result = await db.execute(
         select(CameraConfig).where(CameraConfig.camera_id == camera_id)
     )
@@ -184,3 +191,76 @@ async def remove_camera(camera_id: str, db: AsyncSession = Depends(get_async_db)
         await db.commit()
 
     return {"message": "Camera removed", "camera_id": camera_id}
+
+
+@router.put("/zone/{camera_id}")
+async def update_zone(
+    camera_id: str,
+    body: ZoneUpdate,
+    db: AsyncSession = Depends(get_async_db),
+):
+    """
+    Update (or clear) the detection polygon zone for a camera.
+    The change is applied immediately to any running stream — no restart needed.
+    Also persists the zone to the DB.
+    """
+    manager = get_stream_manager()
+
+    # Hot-update the live processor (if running)
+    if camera_id in manager.processors:
+        await manager.update_camera_zone(camera_id, body.polygon_zone)
+
+    # Persist to DB
+    result = await db.execute(
+        select(CameraConfig).where(CameraConfig.camera_id == camera_id)
+    )
+    cam = result.scalar_one_or_none()
+
+    if cam:
+        cam.polygon_zone = body.polygon_zone
+        await db.commit()
+        return {
+            "message": "Zone updated",
+            "camera_id": camera_id,
+            "zone_points": len(body.polygon_zone) if body.polygon_zone else 0,
+        }
+    else:
+        # Camera not in DB — just update the live stream if it exists
+        if camera_id not in manager.processors:
+            raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
+        return {
+            "message": "Zone updated (live only — camera not in DB)",
+            "camera_id": camera_id,
+            "zone_points": len(body.polygon_zone) if body.polygon_zone else 0,
+        }
+
+
+@router.get("/zone/{camera_id}")
+async def get_zone(camera_id: str, db: AsyncSession = Depends(get_async_db)):
+    """Get the current polygon zone for a camera."""
+    manager = get_stream_manager()
+
+    # Check live processor first
+    processor = manager.processors.get(camera_id)
+    if processor:
+        return {
+            "camera_id":    camera_id,
+            "polygon_zone": processor.polygon_zone,
+            "zone_points":  len(processor.polygon_zone) if processor.polygon_zone else 0,
+            "source":       "live",
+        }
+
+    # Fall back to DB
+    result = await db.execute(
+        select(CameraConfig).where(CameraConfig.camera_id == camera_id)
+    )
+    cam = result.scalar_one_or_none()
+    if cam:
+        return {
+            "camera_id":    camera_id,
+            "polygon_zone": cam.polygon_zone,
+            "zone_points":  len(cam.polygon_zone) if cam.polygon_zone else 0,
+            "source":       "database",
+        }
+
+    raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
