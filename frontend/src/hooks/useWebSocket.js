@@ -5,7 +5,8 @@ export function useWebSocket(cameraId) {
   const ws = useRef(null);
   useEffect(() => {
     if (!cameraId) return;
-    ws.current = new WebSocket(`${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/ws/${cameraId}`);
+    const wsBaseUrl = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
+    ws.current = new WebSocket(`${wsBaseUrl}/ws/${cameraId}`);
     ws.current.onopen = () => setIsConnected(true);
     ws.current.onmessage = (e) => { try { setMessages(p => [...p, JSON.parse(e.data)]); } catch(err){} };
     ws.current.onerror = () => setIsConnected(false);

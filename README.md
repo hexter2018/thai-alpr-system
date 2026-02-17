@@ -206,13 +206,14 @@ docker-compose logs -f backend
 
 # Services will be available at:
 # - Backend API: http://localhost:8000
-# - Frontend: http://localhost:3000
+# - Frontend (direct): http://localhost:3000
+# - Frontend via Nginx: http://localhost:80
 # - PgAdmin: http://localhost:5050 (development)
 ```
 
 ### 9. Access Dashboard
 ```
-Open browser: http://localhost:3000
+Open browser: http://localhost:3000 (or http://localhost:80 via Nginx)
 
 Default credentials (if authentication enabled):
 Username: admin
