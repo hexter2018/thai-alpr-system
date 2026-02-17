@@ -3,10 +3,9 @@ Configuration Management
 Load settings from environment variables
 """
 import os
-from typing import Optional, List, Annotated
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
-from pydantic import Field, field_validator
-
+from typing import Optional, List
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -24,19 +23,17 @@ class Settings(BaseSettings):
     RELOAD: bool = Field(default=False, env="RELOAD")
     
     # CORS
-    CORS_ORIGINS: Annotated[List[str], NoDecode] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:3000,http://localhost:5173",
         env="CORS_ORIGINS"
     )
     
-    @field_validator("CORS_ORIGINS", pre=True)
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            if not v or v.strip() == "":
-                return ["http://localhost:3000", "http://localhost:5173"]
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Return CORS origins parsed from comma-separated settings value."""
+        if not self.CORS_ORIGINS or self.CORS_ORIGINS.strip() == "":
+            return ["http://localhost:3000", "http://localhost:5173"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
     
     # Database
     DATABASE_URL: str = Field(..., env="DATABASE_URL")
