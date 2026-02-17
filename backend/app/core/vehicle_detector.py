@@ -92,7 +92,6 @@ class VehicleDetector:
                 model = YOLO(str(fallback_path), task='detect')
                 loaded_model_path = fallback_path
             
-            model.to(self.device)
             if loaded_model_path is not None and loaded_model_path.suffix == '.pt':
                 model.to(self.device)
             else:
