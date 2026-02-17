@@ -77,8 +77,8 @@ services:
       ENVIRONMENT: production
       SECRET_KEY: ${SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
-      VEHICLE_MODEL_PATH: /app/models/vehicles.engine
-      PLATE_MODEL_PATH: /app/models/best.engine
+      VEHICLE_MODEL_PATH: /app/models/vehicles.pt
+      PLATE_MODEL_PATH: /app/models/best.pt
       USE_TENSORRT: "true"
       DEDUP_WINDOW_SECONDS: ${DEDUP_WINDOW_SECONDS:-60}
       HIGH_CONFIDENCE_THRESHOLD: 0.95

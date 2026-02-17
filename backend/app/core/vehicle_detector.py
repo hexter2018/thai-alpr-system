@@ -59,31 +59,32 @@ class VehicleDetector:
         )
     
     def _load_model(self):
-        """Load YOLOv8 model (PyTorch or TensorRT)"""
+        """Load YOLOv8 model (PyTorch/ONNX or TensorRT)."""
         try:
             from ultralytics import YOLO
             
-            model_path_str = str(self.model_path)
+            model_path_str = self.model_path
             
             # Check if TensorRT engine exists
             if self.use_tensorrt:
-                engine_path = self.model_path.with_suffix('.engine')
+                engine_path = model_path.with_suffix('.engine')
                 
                 if engine_path.exists():
                     logger.info(f"Loading TensorRT engine: {engine_path}")
                     model = YOLO(str(engine_path))
                 else:
+                    fallback_path = self._resolve_fallback_model_path()
                     logger.warning(
                         f"TensorRT engine not found: {engine_path}. "
-                        f"Loading PyTorch model and will export to TensorRT."
+                        f"Loading fallback model from {fallback_path}."
                     )
-                    model = YOLO(model_path_str)
-                    # Export to TensorRT will be done on first inference
+                    model = YOLO(str(fallback_path))
+                    model = self._try_export_and_reload_tensorrt(model, engine_path, fallback_path)
             else:
+                fallback_path = self._resolve_fallback_model_path()
                 logger.info(f"Loading PyTorch model: {self.model_path}")
-                model = YOLO(model_path_str)
+                model = YOLO(str(self.model_path))
             
-            # Move to device
             model.to(self.device)
             
             return model
@@ -94,6 +95,61 @@ class VehicleDetector:
         except Exception as e:
             logger.error(f"Failed to load vehicle detection model: {e}")
             raise
+
+    def _resolve_fallback_model_path(self) -> Path:
+        """Resolve an existing source model path for loading/export fallback."""
+        if self.model_path.exists() and self.model_path.suffix != '.engine':
+            return self.model_path
+
+        candidates = [
+            self.model_path.with_suffix('.pt'),
+            self.model_path.with_suffix('.onnx'),
+            self.model_path.with_name('vehicles.pt'),
+            self.model_path.with_name('vehicle.pt'),
+            self.model_path.with_name('vehicles.onnx'),
+            self.model_path.with_name('vehicle.onnx'),
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        raise FileNotFoundError(
+            f"TensorRT engine not found at {self.model_path} and no fallback model (.pt/.onnx) was found. "
+            f"Checked: {', '.join(str(path) for path in candidates)}"
+        )
+
+    def _try_export_and_reload_tensorrt(self, model, engine_path: Path, source_path: Path):
+        """Try exporting fallback model to TensorRT and reload if export succeeds."""
+        try:
+            logger.info(f"Attempting TensorRT export from fallback model: {source_path}")
+            exported_path = Path(
+                model.export(
+                    format='engine',
+                    imgsz=640,
+                    half=True,
+                    workspace=4,
+                    device=self.device,
+                )
+            )
+
+            selected_engine = exported_path if exported_path.exists() else engine_path
+            if selected_engine.exists():
+                from ultralytics import YOLO
+                model = YOLO(str(selected_engine))
+                model.to(self.device)
+                logger.info(f"TensorRT export successful and reloaded engine: {selected_engine}")
+            else:
+                logger.warning(
+                    f"TensorRT export reported success but engine file was not found. "
+                    f"Expected one of: {exported_path}, {engine_path}."
+                )
+        except Exception as export_error:
+            logger.warning(
+                f"TensorRT export skipped/failed; continuing with fallback model {source_path}: {export_error}"
+            )
+
+        return model
     
     def export_to_tensorrt(
         self,
