@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import StreamViewer from './StreamViewer';
 import DetectionOverlay from './DetectionOverlay';
 import LogTable from './LogTable';
-import AddCameraModal from './AddCameraModal';
+import AddCameraModal from './Addcameramodal';
 import { useWebSocket } from '../../hooks/useWebSocket';
 
 export default function LiveMonitor() {
