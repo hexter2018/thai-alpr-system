@@ -25,7 +25,10 @@ torchvision==0.16.1+cu118
 --find-links https://download.pytorch.org/whl/cu118/torch_stable.html
 
 # YOLOv8
-ultralytics==8.0.227
+# Keep Ultralytics aligned with the training/export version of bundled weights.
+# Older 8.0.x releases miss newer module classes (e.g. `C3k2`) required by
+# current checkpoints and crash at startup while loading `vehicle.pt`.
+ultralytics==8.3.78
 
 # TensorRT (NVIDIA RTX 3060)
 # Install separately: https://developer.nvidia.com/tensorrt
