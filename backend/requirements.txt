@@ -1,0 +1,143 @@
+# Thai ALPR System - Backend Requirements
+# Python 3.10+
+
+# ========== Core Framework ==========
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+
+# ========== Database ==========
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+asyncpg==0.29.0  # Async PostgreSQL driver
+
+# ========== Redis ==========
+redis==5.0.1
+hiredis==2.2.3  # C parser for better performance
+
+# ========== AI/ML - Computer Vision ==========
+# CUDA 11.8+ required for GPU support
+torch==2.1.1+cu118  # PyTorch with CUDA 11.8
+torchvision==0.16.1+cu118
+--find-links https://download.pytorch.org/whl/cu118/torch_stable.html
+
+# YOLOv8
+ultralytics==8.0.227
+
+# TensorRT (NVIDIA RTX 3060)
+# Install separately: https://developer.nvidia.com/tensorrt
+# tensorrt==8.6.1
+# Note: TensorRT must be installed manually from NVIDIA
+
+# OpenCV with CUDA support (optional, for max performance)
+opencv-python==4.8.1.78
+# For CUDA build: opencv-contrib-python
+opencv-contrib-python==4.8.1.78
+
+# ========== OCR ==========
+# PaddleOCR (Thai language support)
+paddleocr==2.7.0.3
+paddlepaddle-gpu==2.5.2  # GPU version
+# For CPU only: paddlepaddle==2.5.2
+
+# Alternative: Tesseract
+pytesseract==0.3.10
+# System requirement: tesseract-ocr, tesseract-ocr-tha
+
+# ========== Object Tracking ==========
+# ByteTrack / BoT-SORT
+supervision==0.16.0  # Includes ByteTrack
+# Alternative:
+# boxmot==10.0.47
+
+# ========== Image Processing ==========
+numpy==1.24.3
+Pillow==10.1.0
+scikit-image==0.22.0
+imutils==0.5.4
+
+# ========== Video Processing ==========
+# RTSP stream handling
+# opencv-python handles basic RTSP
+# For advanced features:
+# ffmpeg-python==0.2.0
+
+# ========== Async & Concurrency ==========
+asyncio==3.4.3
+aiofiles==23.2.1
+aiohttp==3.9.1
+
+# ========== API & WebSocket ==========
+websockets==12.0
+python-socketio==5.10.0
+sse-starlette==1.8.2  # Server-Sent Events
+
+# ========== Authentication & Security ==========
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+bcrypt==4.1.1
+
+# ========== Configuration ==========
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# ========== Logging & Monitoring ==========
+loguru==0.7.2
+python-json-logger==2.0.7
+
+# Optional monitoring
+# prometheus-client==0.19.0
+# sentry-sdk==1.38.0
+
+# ========== Data Validation ==========
+email-validator==2.1.0
+phonenumbers==8.13.26
+
+# ========== File Storage ==========
+# For S3/cloud storage (optional)
+# boto3==1.29.7
+# google-cloud-storage==2.10.0
+
+# ========== Utilities ==========
+python-dateutil==2.8.2
+pytz==2023.3.post1
+tzdata==2023.3
+
+# HTTP client
+httpx==0.25.2
+requests==2.31.0
+
+# ========== Development & Testing ==========
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+httpx==0.25.2  # For testing async endpoints
+
+# Code quality
+black==23.12.0
+flake8==6.1.0
+isort==5.13.0
+mypy==1.7.1
+
+# ========== Database Migration ==========
+alembic==1.12.1
+
+# ========== Performance ==========
+# ONNX Runtime (alternative to TensorRT)
+# onnxruntime-gpu==1.16.3
+
+# Cython for performance
+# Cython==3.0.7
+
+# ========== Optional: Active Learning ==========
+# For model retraining
+# roboflow==1.1.9
+
+# ========== System ==========
+# psutil==5.9.6  # System monitoring
+# GPUtil==1.4.0  # GPU monitoring
