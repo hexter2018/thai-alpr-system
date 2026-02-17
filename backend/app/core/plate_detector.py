@@ -70,7 +70,10 @@ class PlateDetector:
                         f"Loading fallback model from {fallback_path}."
                     )
                     model = YOLO(str(fallback_path))
-                    model = self._try_export_and_reload_tensorrt(model, engine_path, fallback_path)
+                    logger.info(
+                        "Skipping automatic TensorRT export during startup. "
+                        "Use export_to_tensorrt() to generate an engine explicitly."
+                    )
             else:
                 fallback_path = self._resolve_fallback_model_path()
                 logger.info(f"Loading model without TensorRT: {fallback_path}")

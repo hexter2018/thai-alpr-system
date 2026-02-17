@@ -62,6 +62,8 @@ class VehicleDetector:
         """Load YOLOv8 model (PyTorch/ONNX or TensorRT)."""
         try:
             from ultralytics import YOLO
+
+            loaded_model_path: Optional[Path] = None
                         
             # Check if TensorRT engine exists
             if self.use_tensorrt:
@@ -69,21 +71,35 @@ class VehicleDetector:
                 
                 if engine_path.exists():
                     logger.info(f"Loading TensorRT engine: {engine_path}")
-                    model = YOLO(str(engine_path))
+                    model = YOLO(str(engine_path), task='detect')
+                    loaded_model_path = engine_path
                 else:
                     fallback_path = self._resolve_fallback_model_path()
                     logger.warning(
                         f"TensorRT engine not found: {engine_path}. "
                         f"Loading fallback model from {fallback_path}."
                     )
-                    model = YOLO(str(fallback_path))
-                    model = self._try_export_and_reload_tensorrt(model, engine_path, fallback_path)
+                    model = YOLO(str(fallback_path), task='detect')
+                    loaded_model_path = fallback_path
+                    model, loaded_model_path = self._try_export_and_reload_tensorrt(
+                        model,
+                        engine_path,
+                        fallback_path,
+                    )
             else:
                 fallback_path = self._resolve_fallback_model_path()
                 logger.info(f"Loading source model: {fallback_path}")
-                model = YOLO(str(fallback_path))
+                model = YOLO(str(fallback_path), task='detect')
+                loaded_model_path = fallback_path
             
             model.to(self.device)
+            if loaded_model_path is not None and loaded_model_path.suffix == '.pt':
+                model.to(self.device)
+            else:
+                logger.info(
+                    "Using non-PyTorch model format (%s); skipping model.to() and deferring device selection to predict().",
+                    loaded_model_path.suffix if loaded_model_path else "unknown",
+                )
             
             return model
             
@@ -103,9 +119,7 @@ class VehicleDetector:
             self.model_path.with_suffix('.pt'),
             self.model_path.with_suffix('.onnx'),
             self.model_path.with_name('vehicles.pt'),
-            self.model_path.with_name('vehicle.pt'),
             self.model_path.with_name('vehicles.onnx'),
-            self.model_path.with_name('vehicle.onnx'),
         ]
 
         for candidate in candidates:
@@ -134,9 +148,9 @@ class VehicleDetector:
             selected_engine = exported_path if exported_path.exists() else engine_path
             if selected_engine.exists():
                 from ultralytics import YOLO
-                model = YOLO(str(selected_engine))
-                model.to(self.device)
+                model = YOLO(str(selected_engine), task='detect')
                 logger.info(f"TensorRT export successful and reloaded engine: {selected_engine}")
+                return model, selected_engine
             else:
                 logger.warning(
                     f"TensorRT export reported success but engine file was not found. "
@@ -147,7 +161,7 @@ class VehicleDetector:
                 f"TensorRT export skipped/failed; continuing with fallback model {source_path}: {export_error}"
             )
 
-        return model
+        return model, source_path
     
     def export_to_tensorrt(
         self,
