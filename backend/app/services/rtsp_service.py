@@ -222,9 +222,9 @@ class RTSPStreamManager:
 _stream_manager: Optional[RTSPStreamManager] = None
 
 def get_stream_manager() -> RTSPStreamManager:
+    global _stream_manager
     if _stream_manager is None:
         # Allow lazy initialization if needed
-        global _stream_manager
         _stream_manager = RTSPStreamManager()
     return _stream_manager
 
