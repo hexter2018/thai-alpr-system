@@ -1,6 +1,14 @@
+#!/usr/bin/env python3
 """
 FastAPI Main Application - Thai ALPR System Backend
+Optimized startup with TensorRT check disabled
 """
+
+# IMPORTANT: Set these BEFORE importing any ultralytics modules
+import os
+os.environ['YOLO_OFFLINE'] = '1'
+os.environ['ULTRALYTICS_AUTOINSTALL'] = 'False'
+
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -13,12 +21,20 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
-from .config import get_settings, get_env_camera_configs
-from .database import init_database, get_db_manager
-from .services.redis_service import init_redis, close_redis, get_redis
-from .services.rtsp_service import init_stream_manager, get_stream_manager
-from .services.active_learning import init_active_learning
-from .core.ai_core import create_alpr_core
+# Disable Ultralytics checks after import
+try:
+    from ultralytics.utils import SETTINGS
+    SETTINGS['sync'] = False
+    SETTINGS['checks'] = False
+except:
+    pass
+
+from app.config import get_settings, get_env_camera_configs
+from app.database import init_database, get_db_manager
+from app.services.redis_service import init_redis, close_redis, get_redis
+from app.services.rtsp_service import init_stream_manager, get_stream_manager
+from app.services.active_learning import init_active_learning
+from app.core.ai_core import create_alpr_core
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,7 +93,7 @@ async def lifespan(app: FastAPI):
 
         # 5. Load cameras from DB
         logger.info("📷 Loading active cameras from DB...")
-        from .models import CameraConfig
+        from app.models import CameraConfig
         async with db_manager.session_scope() as session:
             result = await session.execute(
                 select(CameraConfig).where(CameraConfig.is_active.is_(True))
@@ -213,7 +229,7 @@ websocket_manager = WebSocketManager()
 async def handle_detection(camera_id: str, results: list):
     """Save detections to DB and broadcast via WebSocket"""
     try:
-        from .models import AccessLog, ProcessStatus
+        from app.models import AccessLog, ProcessStatus
 
         db_manager = get_db_manager()
         async with db_manager.session_scope() as session:
@@ -290,7 +306,7 @@ async def root():
 
 # ==================== API Routes ====================
 
-from .api.routes import alpr, vehicles, logs, stream, stats, verification
+from app.api.routes import alpr, vehicles, logs, stream, stats, verification
 
 app.include_router(alpr.router, prefix="/api/alpr", tags=["ALPR"])
 app.include_router(vehicles.router, prefix="/api/vehicles", tags=["Vehicles"])
