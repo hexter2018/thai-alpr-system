@@ -25,8 +25,11 @@ from sqlalchemy import select
 # Disable Ultralytics checks after import
 try:
     from ultralytics.utils import SETTINGS
-    SETTINGS['sync'] = False
-    SETTINGS['checks'] = False
+    # Newer Ultralytics versions removed some legacy keys (e.g. "checks").
+    # Only update settings that exist to avoid startup-time KeyError.
+    for setting_key in ("sync", "checks"):
+        if setting_key in SETTINGS:
+            SETTINGS[setting_key] = False
 except ImportError:
     pass
 
