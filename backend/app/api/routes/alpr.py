@@ -1,6 +1,6 @@
 """
-ALPR API Routes
-License plate recognition endpoints
+ALPR API Routes - FIXED VERSION
+Better error handling for image processing
 """
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,10 +30,33 @@ async def process_image(
     try:
         from ...main import alpr_core
         
+        # Check if alpr_core is initialized
+        if alpr_core is None:
+            logger.error("ALPR Core not initialized")
+            raise HTTPException(
+                status_code=503, 
+                detail="ALPR system not ready. Please wait for system initialization."
+            )
+        
+        # Validate file type
+        if not file.content_type or not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
         # Read image
         contents = await file.read()
+        if len(contents) == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+        
+        logger.info(f"Processing image upload: {file.filename}, size: {len(contents)} bytes")
+        
+        # Decode image
         nparr = np.frombuffer(contents, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None or image.size == 0:
+            raise HTTPException(status_code=400, detail="Invalid image format or corrupted file")
+        
+        logger.info(f"Image decoded: shape={image.shape}")
         
         # Process through ALPR
         results = await alpr_core.process_frame(
@@ -45,24 +68,29 @@ async def process_image(
         )
         
         if not results:
-            raise HTTPException(status_code=404, detail="No license plate detected")
+            raise HTTPException(
+                status_code=404, 
+                detail="No license plate detected in image. Try a clearer image with visible license plate."
+            )
         
         result = results[0]
+        
+        logger.info(f"Detection result: plate={result.get('detected_plate')}, confidence={result.get('ocr_confidence')}")
         
         # Save to database
         log = AccessLog(
             tracking_id=f"upload_{datetime.now().timestamp()}",
             detection_timestamp=datetime.now(),
             camera_id="upload",
-            full_image_path=result["full_image_path"],
-            plate_crop_path=result["plate_crop_path"],
-            detected_plate=result["detected_plate"],
+            full_image_path=result.get("full_image_path"),
+            plate_crop_path=result.get("plate_crop_path"),
+            detected_plate=result.get("detected_plate"),
             detected_province=result.get("detected_province"),
-            confidence_score=result["ocr_confidence"],
-            vehicle_type=result["vehicle_type"],
-            vehicle_bbox=result["vehicle_bbox"],
-            plate_bbox=result["plate_bbox"],
-            status=ProcessStatus[result["status"]],
+            confidence_score=result.get("ocr_confidence", 0.0),
+            vehicle_type=result.get("vehicle_type", "unknown"),
+            vehicle_bbox=result.get("vehicle_bbox"),
+            plate_bbox=result.get("plate_bbox"),
+            status=ProcessStatus[result.get("status", "PENDING_VERIFY")],
             ocr_raw_output=result.get("ocr_raw"),
             model_versions=result.get("model_versions")
         )
@@ -71,11 +99,18 @@ async def process_image(
         await db.commit()
         await db.refresh(log)
         
+        logger.info(f"Saved to database: log_id={log.id}")
+        
         return log
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Image processing failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Image processing failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Image processing error: {str(e)}"
+        )
 
 
 @router.get("/pending", response_model=List[AccessLogResponse])
