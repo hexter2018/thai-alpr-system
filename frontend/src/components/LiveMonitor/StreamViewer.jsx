@@ -6,8 +6,8 @@ export default function StreamViewer({ cameraId, cameraName, isRunning }) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   // สร้าง URL สำหรับดึงภาพ MJPEG
-  // ใช้ VITE_API_URL จาก .env หรือ fallback เป็น localhost
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const configuredBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+  const baseUrl = configuredBaseUrl.replace(/\/$/, '');
   const streamUrl = isRunning 
     ? `${baseUrl}/api/stream/video/${cameraId}?t=${refreshKey}` 
     : null;
