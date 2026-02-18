@@ -127,7 +127,7 @@ class RTSPStreamProcessor:
                         fps_counter = 0
                         fps_timer = time.time()
                     
-                    # (Optional) Call callback if needed, but usually we pull frames from AI service
+                    # (Optional) Call callback if needed
                     # if self.on_detection: self.on_detection(frame)
 
                 else:
@@ -159,11 +159,21 @@ class RTSPStreamManager:
     """
     Singleton Manager for multiple cameras.
     """
-    def __init__(self, alpr_core, redis_service, on_detection=None):
+    def __init__(self, alpr_core=None, redis_service=None, on_detection=None):
         self.alpr_core = alpr_core
         self.redis_service = redis_service
         self.on_detection = on_detection
         self.processors: Dict[str, RTSPStreamProcessor] = {}
+
+    # --- Alias Methods (เพื่อรองรับ code เก่าใน main.py) ---
+    async def add_camera(self, camera_id: str, source: str):
+        """Alias for start_camera to fix 'AttributeError' in main.py"""
+        return await self.start_camera(camera_id, source)
+
+    async def remove_camera(self, camera_id: str):
+        """Alias for stop_camera"""
+        return await self.stop_camera(camera_id)
+    # --------------------------------------------------------
 
     async def start_camera(self, camera_id: str, rtsp_url: str):
         if camera_id in self.processors:
@@ -213,12 +223,14 @@ _stream_manager: Optional[RTSPStreamManager] = None
 
 def get_stream_manager() -> RTSPStreamManager:
     if _stream_manager is None:
-        raise RuntimeError("Stream manager not initialized. Call init_stream_manager() first.")
+        # Allow lazy initialization if needed
+        global _stream_manager
+        _stream_manager = RTSPStreamManager()
     return _stream_manager
 
 def init_stream_manager(
-    alpr_core,
-    redis_service,
+    alpr_core=None,
+    redis_service=None,
     on_detection: Optional[Callable] = None,
 ) -> RTSPStreamManager:
     global _stream_manager
