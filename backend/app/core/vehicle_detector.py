@@ -3,6 +3,7 @@ Vehicle Detector using YOLOv8 with TensorRT Optimization
 Detects vehicles (car, truck, bus, van, motorcycle) from video frames
 """
 import logging
+import importlib.util
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 import cv2
@@ -62,6 +63,12 @@ class VehicleDetector:
         """Load YOLOv8 model (PyTorch/ONNX or TensorRT)."""
         try:
             from ultralytics import YOLO
+
+            if self.use_tensorrt and importlib.util.find_spec("tensorrt") is None:
+                logger.warning(
+                    "TensorRT runtime is not installed. Falling back to source model to avoid Ultralytics auto-install delay."
+                )
+                self.use_tensorrt = False
 
             loaded_model_path: Optional[Path] = None
                         

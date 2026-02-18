@@ -69,8 +69,8 @@ async def process_image(
         
         if not results:
             raise HTTPException(
-                status_code=404, 
-                detail="No license plate detected in image. Try a clearer image with visible license plate."
+                status_code=422,
+                detail="No license plate detected in image. Try a clearer image with a visible license plate."
             )
         
         result = results[0]

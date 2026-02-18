@@ -33,7 +33,19 @@ export default function ZoneEditor({
   // ── Initialise from prop ──────────────────────────────────────────────────
   useEffect(() => {
     if (initialZone && initialZone.length > 0) {
-      setPoints(initialZone.map(p => ({ x: p.x, y: p.y })));
+      setPoints(
+        initialZone
+          .map((p) => {
+            if (Array.isArray(p) && p.length >= 2) {
+              return { x: Number(p[0]), y: Number(p[1]) };
+            }
+            if (p && typeof p === 'object' && 'x' in p && 'y' in p) {
+              return { x: Number(p.x), y: Number(p.y) };
+            }
+            return null;
+          })
+          .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y)),
+      );
     } else {
       setPoints([]);
     }

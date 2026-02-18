@@ -100,14 +100,15 @@ export default function LiveMonitor() {
     setZoneSaving(true);
     setZoneSaved(false);
     try {
+      const normalizedPoints = points.map((p) => [Math.round(p.x), Math.round(p.y)]);
       const res = await fetch(`/api/stream/zone/${selectedCamera}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ polygon_zone: points.length >= 3 ? points : null }),
+        body: JSON.stringify({ polygon_zone: normalizedPoints.length >= 3 ? normalizedPoints : null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Zone save failed');
-      setZoneData(points.length >= 3 ? points : []);
+      setZoneData(normalizedPoints.length >= 3 ? normalizedPoints : []);
       setZoneSaved(true);
       setTimeout(() => setZoneSaved(false), 3000);
     } catch (err) {
