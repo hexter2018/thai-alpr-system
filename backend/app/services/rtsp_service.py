@@ -7,7 +7,7 @@ import asyncio
 import os
 import threading
 import time
-from typing import Optional, Dict, Callable, List
+from typing import Optional, Dict, Callable, List, Any
 import cv2
 import numpy as np
 
@@ -24,9 +24,10 @@ class RTSPStreamProcessor:
     Manages a single RTSP camera connection using a dedicated thread.
     This prevents blocking the main asyncio loop.
     """
-    def __init__(self, camera_id: str, rtsp_url: str, on_detection: Optional[Callable] = None):
+    def __init__(self, camera_id: str, rtsp_url: str, config: Dict[str, Any] = None, on_detection: Optional[Callable] = None):
         self.camera_id = camera_id
         self.rtsp_url = rtsp_url
+        self.config = config or {}  # เก็บค่า config อื่นๆ เช่น frame_skip ไว้ดูเล่น ไม่ให้หายไป
         self.on_detection = on_detection
         
         # State
@@ -162,28 +163,41 @@ class RTSPStreamManager:
         self.on_detection = on_detection
         self.processors: Dict[str, RTSPStreamProcessor] = {}
 
-    # --- Alias Methods (FIXED HERE) ---
-    async def add_camera(self, camera_id: str, rtsp_url: str):
-        """Alias for start_camera to fix 'unexpected keyword argument' in main.py"""
-        # รับค่าเป็น rtsp_url ให้ตรงกับที่ main.py ส่งมา
-        return await self.start_camera(camera_id, rtsp_url)
+    # --- Alias Methods (ROBUST FIX HERE) ---
+    async def add_camera(self, camera_id: str, rtsp_url: str, **kwargs):
+        """
+        Alias for start_camera. 
+        Accepts **kwargs to safely handle any extra arguments (like frame_skip) 
+        passed by main.py without crashing.
+        """
+        return await self.start_camera(camera_id, rtsp_url, **kwargs)
 
     async def remove_camera(self, camera_id: str):
         """Alias for stop_camera"""
         return await self.stop_camera(camera_id)
     # --------------------------------------------------------
 
-    async def start_camera(self, camera_id: str, rtsp_url: str):
+    async def start_camera(self, camera_id: str, rtsp_url: str, **kwargs):
+        """
+        Starts a camera processor.
+        kwargs can contain 'frame_skip', 'zone_id', etc.
+        """
         if camera_id in self.processors:
             if self.processors[camera_id].is_running:
                 return
             else:
                 await self.stop_camera(camera_id)
 
-        processor = RTSPStreamProcessor(camera_id, rtsp_url, self.on_detection)
+        # Pass kwargs as config to the processor
+        processor = RTSPStreamProcessor(
+            camera_id=camera_id, 
+            rtsp_url=rtsp_url, 
+            config=kwargs, 
+            on_detection=self.on_detection
+        )
         processor.start()
         self.processors[camera_id] = processor
-        logger.info(f"Camera {camera_id} registered and started.")
+        logger.info(f"Camera {camera_id} registered and started. Config: {kwargs}")
 
     async def stop_camera(self, camera_id: str):
         if camera_id in self.processors:
@@ -222,7 +236,6 @@ _stream_manager: Optional[RTSPStreamManager] = None
 def get_stream_manager() -> RTSPStreamManager:
     global _stream_manager
     if _stream_manager is None:
-        # Allow lazy initialization if needed
         _stream_manager = RTSPStreamManager()
     return _stream_manager
 
