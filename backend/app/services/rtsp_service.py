@@ -127,9 +127,6 @@ class RTSPStreamProcessor:
                         fps_counter = 0
                         fps_timer = time.time()
                     
-                    # (Optional) Call callback if needed
-                    # if self.on_detection: self.on_detection(frame)
-
                 else:
                     logger.warning(f"Camera {self.camera_id} returned empty frame.")
                     cap.release()
@@ -165,10 +162,11 @@ class RTSPStreamManager:
         self.on_detection = on_detection
         self.processors: Dict[str, RTSPStreamProcessor] = {}
 
-    # --- Alias Methods (เพื่อรองรับ code เก่าใน main.py) ---
-    async def add_camera(self, camera_id: str, source: str):
-        """Alias for start_camera to fix 'AttributeError' in main.py"""
-        return await self.start_camera(camera_id, source)
+    # --- Alias Methods (FIXED HERE) ---
+    async def add_camera(self, camera_id: str, rtsp_url: str):
+        """Alias for start_camera to fix 'unexpected keyword argument' in main.py"""
+        # รับค่าเป็น rtsp_url ให้ตรงกับที่ main.py ส่งมา
+        return await self.start_camera(camera_id, rtsp_url)
 
     async def remove_camera(self, camera_id: str):
         """Alias for stop_camera"""
