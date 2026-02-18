@@ -1,9 +1,12 @@
 """RTSP Stream Control API — with zone management"""
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from pydantic import BaseModel
+import cv2
+import asyncio
 
 from ...database import get_async_db
 from ...models import CameraConfig
@@ -25,6 +28,51 @@ class ZoneUpdate(BaseModel):
     """Polygon zone update payload. Pass null / empty list to clear the zone."""
     polygon_zone: Optional[List] = None
 
+# --- [ส่วนที่เพิ่มใหม่] Video Generator Helper ---
+async def frame_generator(camera_id: str):
+    """ฟังก์ชันดึงภาพทีละเฟรมจาก Manager แล้วส่งเป็น MJPEG Stream"""
+    manager = get_stream_manager()
+    
+    while True:
+        # 1. ถ้ากล้องหยุดวิ่ง ให้เลิกส่งภาพ
+        if not manager.is_camera_running(camera_id):
+            break
+
+        # 2. ดึงภาพล่าสุด (Async)
+        frame = await manager.get_camera_frame(camera_id)
+
+        if frame is None:
+            await asyncio.sleep(0.1) # รอภาพมา
+            continue
+
+        # 3. แปลงภาพเป็น JPEG
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            continue
+        
+        frame_bytes = buffer.tobytes()
+
+        # 4. ส่งข้อมูลตามมาตรฐาน MJPEG (Multipart)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        
+        # คุม FPS ขาออก (0.04s = 25 FPS) เพื่อไม่ให้ Browser โหลดหนักเกินไป
+        await asyncio.sleep(0.04)
+
+# --- [ส่วนที่เพิ่มใหม่] API สำหรับดูภาพสด ---
+@router.get("/video/{camera_id}")
+async def video_feed(camera_id: str):
+    """API สำหรับดูภาพสด (MJPEG)"""
+    manager = get_stream_manager()
+    
+    # เช็คว่ากล้องทำงานอยู่ไหม
+    if not manager.is_camera_running(camera_id):
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} is not active")
+
+    return StreamingResponse(
+        frame_generator(camera_id), 
+        media_type="multipart/x-mixed-replace;boundary=frame"
+    )
 
 @router.get("/list")
 async def list_cameras(db: AsyncSession = Depends(get_async_db)):
@@ -38,10 +86,15 @@ async def list_cameras(db: AsyncSession = Depends(get_async_db)):
 
     # 1. Running cameras (live stats)
     for cam_id, stats in manager.get_all_stats().items():
+        # ดึง zone จาก config ของ processor
+        processor = manager.processors.get(cam_id)
+        current_zone = processor.config.get("polygon_zone") if processor else None
+
         cameras[cam_id] = {
             **stats,
             "is_running": True,
             "source": "running",
+            "polygon_zone": current_zone
         }
 
     # 2. DB cameras
@@ -60,7 +113,9 @@ async def list_cameras(db: AsyncSession = Depends(get_async_db)):
         else:
             # Enrich running entry with DB meta
             cameras[cam.camera_id].setdefault("camera_name", cam.camera_name)
-            cameras[cam.camera_id].setdefault("polygon_zone", cam.polygon_zone)
+            # ถ้าใน Runtime ไม่มี zone ให้เอาจาก DB ไปโชว์
+            if not cameras[cam.camera_id].get("polygon_zone"):
+                 cameras[cam.camera_id]["polygon_zone"] = cam.polygon_zone
 
     # 3. .env cameras
     for env_cam in get_env_camera_configs():
@@ -95,11 +150,12 @@ async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db))
         cam = result.scalar_one_or_none()
 
         if cam:
-            added = await manager.add_camera(
+            # ใช้ add_camera alias ที่เราแก้ให้รองรับ kwargs แล้ว
+            await manager.add_camera(
                 camera_id=cam.camera_id,
                 rtsp_url=cam.rtsp_url,
                 frame_skip=cam.frame_skip or 2,
-                polygon_zone=cam.polygon_zone,
+                polygon_zone=cam.polygon_zone, # ส่ง zone เข้าไปเก็บใน config
             )
         else:
             env_cam = next(
@@ -107,7 +163,7 @@ async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db))
                 None,
             )
             if env_cam:
-                added = await manager.add_camera(
+                await manager.add_camera(
                     camera_id=env_cam["camera_id"],
                     rtsp_url=env_cam["rtsp_url"],
                     frame_skip=env_cam["frame_skip"],
@@ -119,51 +175,51 @@ async def start_camera(camera_id: str, db: AsyncSession = Depends(get_async_db))
                     detail=f"Camera '{camera_id}' not found in DB or .env",
                 )
 
-        if not added:
-            raise HTTPException(status_code=400, detail="Failed to register camera")
-
     if manager.is_camera_running(camera_id):
         return {"message": "Camera already running", "camera_id": camera_id}
 
-    success = await manager.start_camera(camera_id)
-    if not success:
-        raise HTTPException(status_code=400, detail="Failed to start camera stream")
-
+    # add_camera มันเรียก start_camera ให้แล้ว แต่เรียกซ้ำเพื่อความชัวร์ก็ไม่เสียหาย (เพราะมี check is_running)
+    # แต่จริงๆ บรรทัดข้างบนมัน start ให้แล้ว
     return {"message": "Camera started", "camera_id": camera_id}
 
 
 @router.post("/stop/{camera_id}")
 async def stop_camera(camera_id: str):
     manager = get_stream_manager()
-    success = await manager.stop_camera(camera_id)
-    if not success:
-        raise HTTPException(status_code=400, detail="Failed to stop camera")
+    # remove_camera alias เรียก stop_camera ให้
+    await manager.remove_camera(camera_id)
     return {"message": "Camera stopped", "camera_id": camera_id}
-
-
-@router.get("/status/{camera_id}")
-async def camera_status(camera_id: str):
-    manager = get_stream_manager()
-    stats = manager.get_camera_stats(camera_id)
-    if stats is None:
-        raise HTTPException(status_code=404, detail="Camera not found")
-    return stats
 
 
 @router.post("/add")
 async def add_camera(body: CameraAdd, db: AsyncSession = Depends(get_async_db)):
     """Persist a new camera to DB and start streaming immediately."""
-    db_cam = CameraConfig(
-        camera_id=body.camera_id,
-        camera_name=body.camera_name,
-        rtsp_url=body.rtsp_url,
-        is_active=True,
-        frame_skip=body.frame_skip,
-        polygon_zone=body.polygon_zone,
-    )
-    db.add(db_cam)
+    
+    # 1. Save to DB first
+    # เช็คก่อนว่ามีอยู่แล้วไหม (Upsert logic)
+    result = await db.execute(select(CameraConfig).where(CameraConfig.camera_id == body.camera_id))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.camera_name = body.camera_name
+        existing.rtsp_url = body.rtsp_url
+        existing.is_active = True
+        existing.frame_skip = body.frame_skip
+        existing.polygon_zone = body.polygon_zone
+    else:
+        db_cam = CameraConfig(
+            camera_id=body.camera_id,
+            camera_name=body.camera_name,
+            rtsp_url=body.rtsp_url,
+            is_active=True,
+            frame_skip=body.frame_skip,
+            polygon_zone=body.polygon_zone,
+        )
+        db.add(db_cam)
+    
     await db.commit()
 
+    # 2. Start Runtime
     manager = get_stream_manager()
     await manager.add_camera(
         camera_id=body.camera_id,
@@ -171,7 +227,6 @@ async def add_camera(body: CameraAdd, db: AsyncSession = Depends(get_async_db)):
         frame_skip=body.frame_skip,
         polygon_zone=body.polygon_zone,
     )
-    await manager.start_camera(body.camera_id)
 
     return {"message": "Camera added and started", "camera_id": body.camera_id}
 
@@ -187,7 +242,8 @@ async def remove_camera(camera_id: str, db: AsyncSession = Depends(get_async_db)
     )
     cam = result.scalar_one_or_none()
     if cam:
-        cam.is_active = False
+        cam.is_active = False # Soft delete (แค่ปิด active)
+        # db.delete(cam) # หรือถ้าจะลบจริงๆ ให้ใช้บรรทัดนี้
         await db.commit()
 
     return {"message": "Camera removed", "camera_id": camera_id}
@@ -200,17 +256,21 @@ async def update_zone(
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    Update (or clear) the detection polygon zone for a camera.
-    The change is applied immediately to any running stream — no restart needed.
-    Also persists the zone to the DB.
+    Update (or clear) the detection polygon zone.
+    Applied immediately to running stream AND DB.
     """
     manager = get_stream_manager()
 
-    # Hot-update the live processor (if running)
+    # 1. Hot-update Runtime
     if camera_id in manager.processors:
-        await manager.update_camera_zone(camera_id, body.polygon_zone)
+        processor = manager.processors[camera_id]
+        # อัปเดตเข้าไปใน config โดยตรง
+        processor.config["polygon_zone"] = body.polygon_zone
+        logger_msg = "Zone updated in Runtime"
+    else:
+        logger_msg = "Camera not running, Zone updated in DB only"
 
-    # Persist to DB
+    # 2. Persist to DB
     result = await db.execute(
         select(CameraConfig).where(CameraConfig.camera_id == camera_id)
     )
@@ -220,19 +280,20 @@ async def update_zone(
         cam.polygon_zone = body.polygon_zone
         await db.commit()
         return {
-            "message": "Zone updated",
+            "message": logger_msg,
             "camera_id": camera_id,
             "zone_points": len(body.polygon_zone) if body.polygon_zone else 0,
         }
-    else:
-        # Camera not in DB — just update the live stream if it exists
-        if camera_id not in manager.processors:
-            raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
-        return {
-            "message": "Zone updated (live only — camera not in DB)",
+    
+    # ถ้าไม่มีใน DB แต่มีใน Runtime (เช่น .env)
+    if camera_id in manager.processors:
+         return {
+            "message": "Zone updated (Runtime only - Camera not in DB)",
             "camera_id": camera_id,
             "zone_points": len(body.polygon_zone) if body.polygon_zone else 0,
         }
+
+    raise HTTPException(status_code=404, detail=f"Camera '{camera_id}' not found")
 
 
 @router.get("/zone/{camera_id}")
@@ -243,10 +304,11 @@ async def get_zone(camera_id: str, db: AsyncSession = Depends(get_async_db)):
     # Check live processor first
     processor = manager.processors.get(camera_id)
     if processor:
+        zone = processor.config.get("polygon_zone")
         return {
             "camera_id":    camera_id,
-            "polygon_zone": processor.polygon_zone,
-            "zone_points":  len(processor.polygon_zone) if processor.polygon_zone else 0,
+            "polygon_zone": zone,
+            "zone_points":  len(zone) if zone else 0,
             "source":       "live",
         }
 
